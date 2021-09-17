@@ -1,4 +1,7 @@
 const express = require('express')
+const jwt = require('jsonwebtoken')
+const config = require('config')
+const bcrypt = require('bcrypt')
 const Usuario = require('../models/usuario_model')
 const ruta = express.Router()
 const Joi = require('joi')
@@ -18,7 +21,19 @@ const schema = Joi.object({
         .email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } })
 })
 
-ruta.get('/', async (req, res) => {
+const verificarToken = (req, res, next)=> {
+    let token = req.get('Token')
+    console.log(token)
+    jwt.verify(token, config.get('configToken.SEED')), (err, decoded) => {
+        if(err) {
+            return res.status(401).json({err})
+        }
+    }
+    res.send(token)
+    next()
+}
+
+ruta.get('/', verificarToken, async (req, res, ) => {
     let usuarios = consUsuariosActivos()
     .then((user)=> {
         res.json({
@@ -35,6 +50,15 @@ ruta.get('/', async (req, res) => {
 ruta.post('/', (req, res) => {
     let body = req.body
 
+    Usuario.findOne({email : req.body.email}, (err, user) => {
+        if(err) {
+            return res.status(400).json({error: "Server Error"})
+        }
+        if(user) {
+            return res.status(400).json({msg: "Usuario Duplicado"})
+        }
+    })
+
     const {error, value} = schema.validate({
         name: req.body.name,
         email : req.body.email
@@ -44,7 +68,8 @@ ruta.post('/', (req, res) => {
         let resultado = crearUsuario(body)
             .then((user)=> {
                 res.json({
-                    valor : user
+                    name : user.name,
+                    email : user.email
                 })
             })
             .catch((err) => {
@@ -69,7 +94,8 @@ ruta.put('/:email', (req, res) => {
         let resultado = actualizarUsuario(req.params.email, req.body)
             .then((user)=> {
                 res.json({
-                    valor : user
+                    name : user.name,
+                    email : user.email
                 })
             })
             .catch((err) => {
@@ -86,7 +112,8 @@ ruta.delete('/:email', (req, res) => {
     let resultado = desactivarUsuario(req.params.email)
         .then((user)=> {
             res.json({
-                valor : user
+                name : user.name,
+                email : user.email
             })
         })
         .catch((err) => {
@@ -99,7 +126,7 @@ ruta.delete('/:email', (req, res) => {
 const consUsuariosActivos = async ()=> {
     let usuario = await Usuario.find({
         state : true
-    })
+    }).select({name:1, email:1 })
     return usuario;
 }
 
@@ -108,7 +135,7 @@ const crearUsuario = async (body)=> {
     let usuario = new Usuario ({
         email : email,
         name : name,
-        password : password
+        password : bcrypt.hashSync(password, 10)
     })
     return await usuario.save();
 }
